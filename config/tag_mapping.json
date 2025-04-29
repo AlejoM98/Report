@@ -1,0 +1,20 @@
+{
+    "plants": {
+      "ElAlto": "El Alto",
+      "Achachicala": "Achachicala",
+      "Pampahasi": "Pampahasi",
+      "Chuquiaguillo": "Chuquiaguillo",
+      "Tilata": "Tilata",
+      "LineaOeste": "Linea Oeste",
+      "SanFelipe": "San Felipe"
+    },
+    "basins": {
+      "Milluni": "Milluni",
+      "Tuni": "Tuni",
+      "Hampaturi": "Hampaturi",
+      "Palcoma": "Palcoma",
+      "Kaluyo": "Kaluyo",
+      "Incachaca": "Incachaca"
+    }
+  }
+  

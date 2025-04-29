@@ -1,0 +1,16 @@
+# Ignorar el entorno virtual de Python
+.venv/
+venv/
+env/
+
+# Ignorar archivos compilados de Python
+__pycache__/
+*.py[cod]
+
+# Ignorar archivos de entorno y editor
+.env
+.vscode/
+.idea/
+
+# Opcional: incluir archivos de lock si lo deseas
+!requirements.txt

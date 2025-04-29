@@ -1,0 +1,12 @@
+[
+    {
+        "tag_name": "Temp_Sensor_1",
+        "address": "PLC1/Temperature1",
+        "description": "Sensor de temperatura en la zona 1"
+    },
+    {
+        "tag_name": "Pressure_Valve",
+        "address": "PLC1/PressureValve",
+        "description": "Válvula de presión"
+    }
+]

@@ -1,0 +1,16 @@
+{
+    "achachicala": {"Plant": "Achachicala", "Basin": null},
+    "el_alto":     {"Plant": "El Alto", "Basin": null},
+    "chuquiaguillo":{"Plant": "Chuquiaguillo", "Basin": null},
+    "lineaOeste":  {"Plant": "Linea Oeste", "Basin": null},
+    "pampahasi":   {"Plant": "Pampahasi", "Basin": null},
+    "sanfelipe":   {"Plant": "SanFelipe", "Basin": null},
+    "tilata":      {"Plant": "Tilata", "Basin": null},
+    "hampaturi":   {"Basin": "Hampaturi", "Plant": null},
+    "incachaca":   {"Basin": "Incachaca", "Plant": null},
+    "kaluyo":      {"Basin": "Kaluyo", "Plant": null},
+    "milluni":     {"Basin": "Milluni", "Plant": null},
+    "palcoma":     {"Basin": "Palcoma", "Plant": null},
+    "tuni":        {"Basin": "Tuni", "Plant": null}
+
+}
