@@ -3,10 +3,10 @@ import pyodbc
 import pandas as pd
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 def get_date_range(period: str = "day"):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     today = datetime(now.year, now.month, now.day)
     if period == "day":
         return today, today + timedelta(days=1)
@@ -86,24 +86,23 @@ def extraer_datos(period='day'):
 
     # 3) TagUID → GroupName
     q_groups = '''
-      SELECT VG.TagUID,
-             VG.NameResourceText AS GroupName
-      FROM TLG.VTagGroup_Texts VG
-      WHERE VG.NameResource_LanguageID = 0
-        AND VG.GroupType_LanguageID = 0;
+       SELECT VG.TagUID,
+         COALESCE(VG.NameResourceText, 'Sin Grupo') AS GroupName  -- Asignar valor por defecto
+        FROM TLG.VTagGroup_Texts VG
+        WHERE VG.NameResource_LanguageID = 0;
     '''
     df_groups = pd.read_sql(q_groups, conn)
     tag_to_group = dict(zip(df_groups['TagUID'], df_groups['GroupName']))
 
     # 4) Cargar mapeo externo de plantas y cuencas
-    mapping_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'instalaciones.json')
+    mapping_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'tag_mapping_new.json')
     if not os.path.exists(mapping_path):
         raise FileNotFoundError(f"No existe el mapeo externo: {mapping_path}")
     with open(mapping_path, 'r', encoding='utf-8') as f:
         maps = json.load(f)
-    # maps expected: { "GroupName": {"Plant":"...","Basin":"..."}, ... }
-    plants_map = {grp: info.get('Plant') for grp, info in maps.items()}
-    basins_map = {grp: info.get('Basin') for grp, info in maps.items()}
+    # Cargar mapeos separados para plantas y cuencas
+    plants_map = {taguid.lower().replace('-', '_'): plant for taguid, plant in maps["plants"].items()}
+    basins_map = {taguid.lower().replace('-', '_'): basin for taguid, basin in maps["basins"].items()}
 
     # 5) Extraer datos según periodo
     if period == 'day':
@@ -167,22 +166,38 @@ def extraer_datos(period='day'):
 
     # 6) Asignar TagName, Plant y Basin
     for df in (df_daily, df_hourly):
-        # df['TagName'] = df['TagUID'].map(name_map).fillna('Sin Nombre')
-        # group_vals = df['TagUID'].map(tag_to_group)
-        # df['Plant'] = group_vals.map(plants_map)
-        # df['Basin'] = group_vals.map(basins_map)
         if df.empty:
             continue
         
         df['TagName'] = df['TagUID'].map(name_map).fillna('Sin Nombre')
         
-        df['GroupName'] = df['TagUID'].map(tag_to_group).fillna('')
-        df['GroupKey'] = (
-            df['GroupName'].str.lower().str.replace(r'[\s\-]+', '_', regex=True)
-        )
+        df['GroupName'] = df['TagUID'].map(lambda x: tag_to_group.get(x, 'Sin Grupo'))   
+        df['GroupKey'] = df['TagUID'].str.lower().str.replace('-', '_')
         
-        df['Plant'] = df['GroupKey'].map(plants_map)
-        df['Basin'] = df['GroupKey'].map(basins_map)
+        # print("\n🔍 Mapeo TagUID → GroupKey → Plant/Basin:")
+        # sample_data = df[['TagUID', 'GroupKey', 'Plant', 'Basin']].drop_duplicates().head(5) # Primeros 5 grupos no vacíos
+        # for group in sample_groups:
+        #     group_key = group.lower().replace(' ', '_').replace('-', '_')
+        #     print(f" - GroupName: '{group}' → GroupKey: '{group_key}'")
+        
+        # Asignar Plant o Basin (excluyente) 
+        df['Plant'] = df['GroupKey'].map(plants_map).fillna('')
+        df['Basin'] = df['GroupKey'].map(basins_map).fillna('')
+        
+        print("\n🔍 Mapeo TagUID → GroupKey → Plant/Basin:")
+        sample_data = df[['TagUID', 'GroupKey', 'Plant', 'Basin']].drop_duplicates().head(5)
+        print(sample_data.to_string(index=False))
+        
+        #Validar grupos en ambas categorías
+        unclassified = df[(df['Plant'] == '') & (df['Basin'] == '')]['GroupKey'].unique()
+        if len(unclassified) > 0:
+            print(f"⚠️ Grupos no clasificados: {unclassified}")
+            
+        #Validar ambas categorias
+        conflict_groups = df[(df['Plant'] != '') & (df['Basin'] != '')]['GroupKey'].unique()
+        if len(conflict_groups) > 0:
+            print(f"❌ Grupos en plantas y cuencas: {conflict_groups}")
+            raise ValueError("Conflicto en mapeo: Grupos presentes en plantas y cuencas")
         
         df.drop(columns=['GroupKey'], inplace=True)
 
