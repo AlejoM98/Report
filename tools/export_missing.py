@@ -1,0 +1,22 @@
+import json
+unmapped = [
+  "01c114ba_af7d_4f73_aa9e_8d0e0ef83082","02099d68_28eb_4d5b_b8c3_00175e909c65",
+  '0251457d_eb9b_40b0_8146_161011ea08c5', '0251a48e_0349_442a_89b8_a6b2aab4635a', 
+  '036470a7_1301_4ffb_a1c3_7640139148a7', 
+  '036ccdcb_e191_469f_8cb3_0b903261ffeb', '04ea4988_2797_49bd_8877_d5348178105b', 
+  '0527a3c3_5f33_4424_9839_2e39066d2804', '05634d40_b53c_4abe_8360_ec2671709f5d', 
+  '069bd9e8_9a1b_4ee1_9741_4135522c6a7f', '06ce79c9_2935_46c8_8348_c186fbd33006', 
+  '095fa347_dbe0_4e16_8020_a5dd3ff28441', '0a3c9f28_8385_4229_b250_506f31e36262', 
+  '0c1351d0_d951_495c_8ea3_99b2cafcae3f', '0c1542d3_52ef_4097_bc5e_ae5ff9139c41', 
+  '0cb7c922_9b39_4822_89eb_55aa5e0b89c9', '0df0c6cf_0fb5_4f6b_b9d6_95ce940d6fd9', 
+  '0f53dd79_3af7_4793_be78_9061a29587a3', '106c57e9_9432_421e_add3_6098c96faf22', 
+  '10dc5de2_bf3d_4420_a929_4555a628dbfd'
+  # … copia tu lista de app.log …
+]
+out = {"plants":{}, "basins":{}}
+for n in unmapped:
+    out["plants"][n] = ""
+    out["basins"][n] = ""
+with open("config/missing_nuids.json","w",encoding="utf-8") as f:
+    json.dump(out,f,indent=2)
+print("Revisa config/missing_nuids.json y completa los valores.")
