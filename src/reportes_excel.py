@@ -1,69 +1,63 @@
 import os, pandas as pd, json
 from xlsxwriter.utility import xl_col_to_name
 
-def generar_reporte_excel(pivot: pd.DataFrame,
-                          raw: pd.DataFrame,
-                          sheet_name: str = "Daily"):
-    if pivot.empty:
-        print(f"⚠️ '{sheet_name}' vacío, no creo hojas")
+# carga tag_mapping para encabezados
+mp = os.path.join(os.path.dirname(__file__),'..','config','tag_mapping.json')
+TAG_MAPPING = json.load(open(mp,encoding='utf-8'))
+
+def generar_reporte_excel(df_raw, sheet_name="Daily"):
+    if df_raw.empty:
+        print(f"⚠️ '{sheet_name}' vacío, no creo hoja")
         return
 
-    out_path = os.path.abspath(os.path.join(
-        os.path.dirname(__file__),'..','data','reportes_por_planta.xlsx'
-    ))
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    # pivot para TagName
+    piv = df_raw.pivot_table(
+        index='Date', columns='TagName', values='Value', aggfunc='mean'
+    ).reset_index()
 
-    with pd.ExcelWriter(out_path, engine='xlsxwriter') as writer:
+    out = os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                       '..','data','reportes_por_planta.xlsx'))
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
         wb = writer.book
-        fmt_hdr = wb.add_format({'align':'center','bold':True,'bg_color':'#D9D9D9','border':1})
-        fmt_dt  = wb.add_format({'num_format':'yyyy-mm-dd','align':'center'})
-        fmt_num = wb.add_format({'num_format':'0.00'})
+        header = wb.add_format({'align':'center','bold':True,'bg_color':'#D9D9D9','border':1})
+        datefm = wb.add_format({'num_format':'yyyy-mm-dd','align':'center'})
+        numfm  = wb.add_format({'num_format':'0.00'})
 
-        def crear_hoja(name, df_sub, title, chart_type='line'):
-            safe = name[:31]
-            ws   = wb.add_worksheet(safe)
-            writer.sheets[safe] = ws
-            last = xl_col_to_name(len(df_sub.columns)-1)
-            ws.merge_range(f'A1:{last}1', title, fmt_hdr)
-            ws.set_header(
-                '&L&G&R&G',
-                {
-                  'image_left':  os.path.abspath('assets/LogoEpsas.jpg'),
-                  'image_right': os.path.abspath('assets/LogoTechlogic.jpg'),
-                  'image_left_position':  1,
-                  'image_right_position': 1
-                }
-            )
-            df_sub.to_excel(writer, sheet_name=safe, startrow=2, index=False)
-            ws.set_column(0,0,20,fmt_dt)
-            ws.set_column(1,len(df_sub.columns)-1,15,fmt_num)
-            if len(df_sub):
-                ch = wb.add_chart({'type':chart_type})
+        def crea_hoja(name, sub, title, ctype='line'):
+            sn = name[:31]
+            ws = wb.add_worksheet(sn)
+            writer.sheets[sn] = ws
+            last = xl_col_to_name(len(sub.columns)-1)
+            ws.merge_range(f'A1:{last}1', title, header)
+            # logos a izquierda y derecha
+            ws.set_header('&L&G&R&G',
+                          {'image_left': os.path.abspath('assets/LogoEpsas.jpg'),
+                           'image_right':os.path.abspath('assets/LogoTechlogic.jpg'),
+                           'image_left_position':1,'image_right_position':1})
+            sub.to_excel(writer, sheet_name=sn, startrow=2, index=False)
+            ws.set_column(0,0,20,datefm)
+            ws.set_column(1,len(sub.columns)-1,15,numfm)
+            if len(sub):
+                ch = wb.add_chart({'type':ctype})
                 ch.add_series({
-                    'categories':[safe,2,0,2+len(df_sub)-1,0],
-                    'values':    [safe,2,1,2+len(df_sub)-1,1],
-                    'name':       title
+                  'categories':[sn,2,0,2+len(sub)-1,0],
+                  'values':    [sn,2,1,2+len(sub)-1,1],
+                  'name':      title
                 })
-                ws.insert_chart(f'B{4+len(df_sub)}', ch, {'x_scale':1.2,'y_scale':1.2})
+                ws.insert_chart(f'B{4+len(sub)}', ch, {'x_scale':1.2,'y_scale':1.2})
 
-        # 1) Overview
-        crear_hoja(sheet_name, pivot.reset_index(), f"{sheet_name} Overview")
-
-        # 2) Por Planta
-        for plant in raw['Plant'].unique():
-            if not plant: continue
-            tags = raw.loc[raw['Plant']==plant, 'TagName'].unique().tolist()
-            cols = ['Date'] + [t for t in tags if t in pivot.columns]
+        # hoja global
+        crea_hoja(sheet_name, piv, f"{sheet_name} Overview")
+        # por planta
+        for uid,plant in TAG_MAPPING['plants'].items():
+            cols = [c for c in piv.columns if c=='Date' or c.endswith(f"_{uid}")]
             if len(cols)>1:
-                crear_hoja(plant, pivot[cols].reset_index(), f"{sheet_name} - {plant}")
-
-        # 3) Por Cuenca
-        for basin in raw['Basin'].unique():
-            if not basin: continue
-            tags = raw.loc[raw['Basin']==basin, 'TagName'].unique().tolist()
-            cols = ['Date'] + [t for t in tags if t in pivot.columns]
+                crea_hoja(plant, piv[cols], f"{sheet_name} - {plant}")
+        # por cuenca
+        for uid,basin in TAG_MAPPING['basins'].items():
+            cols = [c for c in piv.columns if c=='Date' or c.endswith(f"_{uid}")]
             if len(cols)>1:
-                crear_hoja(f"Cuenca {basin}", pivot[cols].reset_index(),
-                           f"{sheet_name} - Cuenca {basin}", chart_type='column')
+                crea_hoja(f"Cuenca {basin}", piv[cols], f"{sheet_name} - Cuenca {basin}", ctype='column')
 
-    print("📊 Reporte guardado en", out_path)
+    print("📊 Reporte guardado en", out)
