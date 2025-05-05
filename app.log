@@ -5849,3 +5849,30 @@
 2025-05-02 14:23:29,492 INFO \u2705 Conexión exitosa (intento 1)
 2025-05-02 14:23:33,370 WARNING NUIDs sin mapeo (Plant/Basin): ['01c114ba_af7d_4f73_aa9e_8d0e0ef83082', '02099d68_28eb_4d5b_b8c3_00175e909c65', '0251457d_eb9b_40b0_8146_161011ea08c5', '0251a48e_0349_442a_89b8_a6b2aab4635a', '036470a7_1301_4ffb_a1c3_7640139148a7', '036ccdcb_e191_469f_8cb3_0b903261ffeb', '04ea4988_2797_49bd_8877_d5348178105b', '0527a3c3_5f33_4424_9839_2e39066d2804', '05634d40_b53c_4abe_8360_ec2671709f5d', '069bd9e8_9a1b_4ee1_9741_4135522c6a7f', '06ce79c9_2935_46c8_8348_c186fbd33006', '095fa347_dbe0_4e16_8020_a5dd3ff28441', '0a3c9f28_8385_4229_b250_506f31e36262', '0c1351d0_d951_495c_8ea3_99b2cafcae3f', '0c1542d3_52ef_4097_bc5e_ae5ff9139c41', '0cb7c922_9b39_4822_89eb_55aa5e0b89c9', '0df0c6cf_0fb5_4f6b_b9d6_95ce940d6fd9', '0f53dd79_3af7_4793_be78_9061a29587a3', '106c57e9_9432_421e_add3_6098c96faf22', '10dc5de2_bf3d_4420_a929_4555a628dbfd']
 2025-05-02 17:01:08,159 INFO \u2705 Conexión exitosa en intento 1
+2025-05-05 09:10:38,712 INFO \u2705 Conexión exitosa en intento 1
+2025-05-05 10:55:09,654 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 10:55:15,373 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 10:55:19,381 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 10:55:48,663 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 11:19:08,832 DEBUG DEBUG CONNSTR: DRIVER={ODBC Driver 17 for SQL Server};SERVER=192.168.9.14\HISTORIAN;DATABASE=HistorianStorage;UID=sa;PWD=Epsas12345$;
+2025-05-05 11:19:09,615 INFO q_map: 0.7s, 265 filas
+2025-05-05 11:19:09,847 INFO q_rel: 0.2s, 604 filas
+2025-05-05 11:48:55,620 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 11:49:00,671 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 11:49:05,815 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 11:49:10,118 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 11:59:27,674 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 11:59:32,553 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 11:59:36,776 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 12:00:16,745 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 12:27:00,121 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 12:27:06,595 INFO \u2705 Conexión exitosa (intento 1)
+2025-05-05 12:29:31,552 INFO \u2705 Conexión BD exitosa (intento 1)
+2025-05-05 12:29:36,297 INFO \u2705 Conexión BD exitosa (intento 1)
+2025-05-05 12:29:36,772 INFO \u2705 Conexión BD exitosa (intento 1)
+2025-05-05 12:29:37,461 INFO \u2705 Conexión BD exitosa (intento 1)
+2025-05-05 12:31:21,903 INFO \u2705 Conexión BD exitosa (intento 1)
+2025-05-05 12:31:27,015 INFO \u2705 Conexión BD exitosa (intento 1)
+2025-05-05 12:31:27,564 INFO \u2705 Conexión BD exitosa (intento 1)
+2025-05-05 12:31:28,189 INFO \u2705 Conexión BD exitosa (intento 1)
+2025-05-05 12:31:45,704 INFO \u2705 JSON guardado en C:\Users\TECHLOGIC GROUP SRL\EPSAS\Report\data\tags_data.json
