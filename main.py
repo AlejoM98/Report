@@ -1,79 +1,53 @@
-import os, json
-import pandas as pd
-
+import os, json, pandas as pd
 from src.conexion import extraer_datos, guardar_json
-from src.reportes_excel import abrir_writer, add_sheet, cerrar_writer
+from src.reportes_excel import generar_reporte_excel
 
 WORK_MODE = 'online'
 PERIODOS   = ["day","week","month","year"]
 JSON_PATH  = os.path.join(os.path.dirname(__file__),'data','tags_data.json')
-OUT_XLSX   = os.path.join(os.path.dirname(__file__),'data','reportes_por_planta.xlsx')
-
-def build_name_map(raw_period):
-    """
-    A partir de los registros diarios+horarios de un periodo,
-    construye un dict {TagUID: TagName}.
-    """
-    name_map = {}
-    for subkey in ('daily','hourly'):
-        for rec in raw_period[subkey]:
-            uid = rec.get('TagUID')
-            tn  = rec.get('TagName')
-            if uid and tn:
-                name_map[uid] = tn
-    return name_map
+OUT_PATH   = os.path.join(os.path.dirname(__file__),'data','reportes_por_planta.xlsx')
 
 def main():
-    # 1) extraer datos y volcar JSON
-    if WORK_MODE == 'online':
+    # 1) Extraer y JSON
+    if WORK_MODE=='online':
         resultados = {p: extraer_datos(p) for p in PERIODOS}
         guardar_json(resultados)
 
-    # 2) leer JSON
+    # 2) Leer JSON
     with open(JSON_PATH,'r',encoding='utf-8') as f:
         raw = json.load(f)
 
-    # 3) abrir writer
-    abrir_writer(OUT_XLSX)
+    # 3) Crear un solo ExcelWriter y generar todas las hojas
+    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
+    with pd.ExcelWriter(OUT_PATH, engine='xlsxwriter') as writer:
+        for p in PERIODOS:
+            # reconstruye df desde JSON
+            df_d = pd.DataFrame(raw[p]['daily'])
+            df_h = pd.DataFrame(raw[p]['hourly'])
 
-    # 4) procesar cada periodo
-    for p in PERIODOS:
-        rec = raw[p]
-        name_map = build_name_map(rec)
+            if not df_d.empty:
+                piv_plants = df_d.pivot_table(
+                    index='Timestamp', columns='Plant', values='Value'
+                ).reset_index()
+                generar_reporte_excel(writer, piv_plants, f"{p.capitalize()} Daily - Plants")
 
-        # convertir a DataFrames
-        df_d = pd.DataFrame(rec['daily'])
-        df_h = pd.DataFrame(rec['hourly'])
+                piv_basins = df_d.pivot_table(
+                    index='Timestamp', columns='Basin', values='Value'
+                ).reset_index()
+                generar_reporte_excel(writer, piv_basins, f"{p.capitalize()} Daily - Basins")
 
-        # DAILY
-        if not df_d.empty:
-            df_d['Timestamp'] = pd.to_datetime(df_d['Timestamp'])
-            piv = (
-                df_d
-                .pivot_table(index='Timestamp', columns='TagUID', values='Value', aggfunc='mean')
-                .rename(columns=name_map)
-                .reset_index()
-            )
-            add_sheet(piv, f"{p.capitalize()} Daily")
-        else:
-            print(f"⚠️ '{p.capitalize()} Daily' no tiene datos → salto")
+            if not df_h.empty:
+                piv_plants_h = df_h.pivot_table(
+                    index='Timestamp', columns='Plant', values='Value'
+                ).reset_index()
+                generar_reporte_excel(writer, piv_plants_h, f"{p.capitalize()} Hourly - Plants")
 
-        # HOURLY
-        if not df_h.empty:
-            df_h['Timestamp'] = pd.to_datetime(df_h['Timestamp'])
-            piv = (
-                df_h
-                .pivot_table(index='Timestamp', columns='TagUID', values='Value', aggfunc='mean')
-                .rename(columns=name_map)
-                .reset_index()
-            )
-            add_sheet(piv, f"{p.capitalize()} Hourly")
-        else:
-            print(f"⚠️ '{p.capitalize()} Hourly' no tiene datos → salto")
+                piv_basins_h = df_h.pivot_table(
+                    index='Timestamp', columns='Basin', values='Value'
+                ).reset_index()
+                generar_reporte_excel(writer, piv_basins_h, f"{p.capitalize()} Hourly - Basins")
 
-    # 5) cerrar writer
-    cerrar_writer()
-    print("✅ Reporte completo generado en", OUT_XLSX)
+    print("📊 Reporte guardado en", OUT_PATH)
 
 if __name__=="__main__":
     main()
