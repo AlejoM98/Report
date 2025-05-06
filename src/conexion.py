@@ -124,6 +124,7 @@ def extraer_datos(period="day"):
     rel_map = df_rel_unique.set_index('TagUID')[['GroupName','Kind']].to_dict('index')
 
     # Construimos también el map de TagUID→TagName
+    global name_map
     name_map = dict(zip(df_map.TagUID, df_map.TagName))
 
     # 3) Consultas de valores
