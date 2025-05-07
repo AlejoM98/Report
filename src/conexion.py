@@ -7,11 +7,18 @@ import pyodbc
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
+# Configuración de logging
 logging.basicConfig(
     filename=os.path.join(os.path.dirname(__file__), '..', 'app.log'),
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s'
 )
+
+# Carga global del mapping de prefijos a nombres
+TAG_MAPPING = json.load(open(
+    os.path.join(os.path.dirname(__file__), '..', 'config', 'tag_mapping.json'),
+    encoding='utf-8'
+))
 
 def leer_config():
     cfg = configparser.ConfigParser()
@@ -59,90 +66,84 @@ def get_date_range(period="day"):
     raise ValueError("Periodo no soportado")
 
 def extraer_datos(period="day"):
-    conn  = conectar_bd()
-    start, end = get_date_range(period)
-    s0, e0     = start.isoformat(), end.isoformat()
+    conn        = conectar_bd()
+    start, end  = get_date_range(period)
+    s0, e0      = start.isoformat(), end.isoformat()
 
-    # 1) TagUID → TagName
-    q_map = """
-      WITH LatestVersions AS (
-        SELECT TV.TagUID, TV.TechnicalName,
-               ROW_NUMBER() OVER (
-                 PARTITION BY TV.TagUID ORDER BY TV.Created DESC
-               ) AS rn
-        FROM TLG.TagVersion TV
-      )
-      SELECT DISTINCT
-        T.VTagUID AS TagUID,
-        COALESCE(LV.TechnicalName,'Sin Nombre') AS TagName
-      FROM TLG.Tag T
-      LEFT JOIN LatestVersions LV
-        ON LV.TagUID=T.TagUID AND LV.rn=1;
+    # 1) Traer todos los TagUID -> TagName desde la vista VTagBrowsing
+    q_tags = """
+      SELECT DISTINCT TagUID, Tagname AS TagName
+      FROM [IS].[VTagBrowsing];
     """
-    df_map = pd.read_sql(q_map, conn)
+    df_tags = pd.read_sql(q_tags, conn)
+    name_map = dict(zip(df_tags.TagUID, df_tags.TagName))
 
-    # 2) Relación TagUID → (no usamos ya GroupText)
-    #    → no necesitamos más df_rel ni mapas de grupo
-
-    # 3) Consultas de valores
-    if period == 'day':
-        q      = """
+    # 2) Traer los valores (raw y hourly según periodo)
+    if period=="day":
+        q_raw = """
           SELECT 
             CAST(SWITCHOFFSET(AV.TimeStamp,'+00:00') AS datetime2(0)) AS Date,
             AV.TagUID,
             CASE WHEN AV.Agg_NUM=0 THEN NULL
                  ELSE AV.Agg_SUM/CAST(AV.Agg_NUM AS float) END AS Value
           FROM TLG.VAggregateValue AV
-          WHERE AV.TimeStamp>=? AND AV.TimeStamp<?;
+          WHERE AV.TimeStamp >= ? AND AV.TimeStamp < ?;
         """
-        qh     = """
+        df      = pd.read_sql(q_raw, conn, params=[s0,e0])
+
+        q_hour = """
           SELECT 
-            DATEADD(hour,DATEDIFF(hour,0,SWITCHOFFSET(TimeStamp,'+00:00')),0) AS Date,
+            DATEADD(hour,
+              DATEDIFF(hour,0,SWITCHOFFSET(TimeStamp,'+00:00')),0) AS Date,
             TagUID,
             AVG(CASE WHEN Agg_NUM=0 THEN NULL
                      ELSE Agg_SUM/CAST(Agg_NUM AS float) END) AS Value
           FROM TLG.VAggregateValue
-          WHERE TimeStamp>=? AND TimeStamp<? 
-          GROUP BY DATEADD(hour,DATEDIFF(hour,0,SWITCHOFFSET(TimeStamp,'+00:00')),0), TagUID;
+          WHERE TimeStamp >= ? AND TimeStamp < ?
+          GROUP BY DATEADD(hour,
+              DATEDIFF(hour,0,SWITCHOFFSET(TimeStamp,'+00:00')),0), TagUID;
         """
-        df      = pd.read_sql(q,  conn, params=[s0,e0])
-        df_hourly = pd.read_sql(qh, conn, params=[s0,e0])
+        df_hourly = pd.read_sql(q_hour, conn, params=[s0,e0])
+
     else:
-        q = """
+        q_raw = """
           SELECT 
             CAST(SWITCHOFFSET(TimeStamp,'+00:00') AS date) AS Date,
             TagUID,
             AVG(CASE WHEN Agg_NUM=0 THEN NULL
-                     ELSE AV.Agg_SUM/CAST(AV.Agg_NUM AS float) END) AS Value
-          FROM TLG.VAggregateValue AV
-          WHERE AV.TimeStamp>=? AND AV.TimeStamp<? 
+                     ELSE Agg_SUM/CAST(Agg_NUM AS float) END) AS Value
+          FROM TLG.VAggregateValue
+          WHERE TimeStamp >= ? AND TimeStamp < ?
           GROUP BY CAST(SWITCHOFFSET(TimeStamp,'+00:00') AS date), TagUID;
         """
-        df        = pd.read_sql(q, conn, params=[s0,e0])
+        df        = pd.read_sql(q_raw, conn, params=[s0,e0])
         df_hourly = pd.DataFrame(columns=['Date','TagUID','Value'])
 
     conn.close()
 
-    # Parsear fechas
+    # Asegurar tipo datetime
     if not df.empty:
         df['Date'] = pd.to_datetime(df['Date'])
     if not df_hourly.empty:
         df_hourly['Date'] = pd.to_datetime(df_hourly['Date'])
 
-    # Construir name_map
-    name_map = dict(zip(df_map.TagUID, df_map.TagName))
-
-    # 4) Enriquecer con TagName, Plant, Basin, Timestamp
+    # 3) Enriquecer cada DataFrame con TagName, Plant y Basin
     for d in (df, df_hourly):
-        if d.empty:
+        if d.empty: 
             continue
-        d['TagName']   = d['TagUID'].map(name_map).fillna('Sin Nombre')
-        # Inferir Plant/Basin por parte antes/después de '-'
-        parts = d['TagName'].str.split('-', n=1, expand=True)
-        d['Plant']     = parts[0].fillna('')
-        d['Basin']     = parts[1].fillna('')
+
+        # TagName real
+        d['TagName'] = d['TagUID'].map(name_map).fillna('Sin Nombre')
         # Timestamp ISO
         d['Timestamp'] = d['Date'].dt.strftime('%Y-%m-%dT%H:%M:%S')
+
+        # Inferencia de Plant/Basin por prefijo
+        parts = d['TagName'].astype(str).str.split(pat='_', n=1, expand=True)
+        # planta: si el prefijo coincide
+        d['Plant'] = parts[0].map(lambda code: TAG_MAPPING['plants'].get(code, '')).fillna('')
+        # basin: si el sufijo coincide
+        d['Basin'] = parts[1].map(lambda code: TAG_MAPPING['basins'].get(code, '')).fillna('')
+
         d.drop(columns=['Date'], inplace=True)
 
     return {'daily': df, 'hourly': df_hourly}
@@ -151,12 +152,23 @@ def guardar_json(resultados, filename='tags_data.json'):
     path = os.path.join(os.path.dirname(__file__), '..', 'data', filename)
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
-    out = {}
+    clean_out = {}
     for periodo, dic in resultados.items():
-        out[periodo] = {
-            'daily':   dic['daily'].to_dict(orient='records'),
-            'hourly':  dic['hourly'].to_dict(orient='records'),
-        }
+        clean_out[periodo] = {}
+        for subkey, df in dic.items():  # 'daily'/'hourly'
+            recs = df.to_dict(orient='records')
+            clean_list = []
+            for r in recs:
+                base = {
+                    'Value':     r['Value'],
+                    'TagName':   r['TagName'],
+                    'Timestamp': r['Timestamp'],
+                    'Plant':     r.get('Plant',''),
+                    'Basin':     r.get('Basin','')
+                }
+                clean_list.append(base)
+            clean_out[periodo][subkey] = clean_list
+
     with open(path, 'w', encoding='utf-8') as f:
-        json.dump(out, f, indent=2, default=str)
-    logging.info("✅ JSON guardado en %s", path)
+        json.dump(clean_out, f, indent=2, ensure_ascii=False)
+    logging.info("✅ JSON limpio guardado en %s", path)
