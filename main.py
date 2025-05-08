@@ -1,79 +1,71 @@
-import os, json
+import os
+import json
 import pandas as pd
-
 from src.conexion import extraer_datos, guardar_json
-from src.reportes_excel import abrir_writer, add_sheet, cerrar_writer
+from src.reportes_excel import generar_reporte_excel
 
 WORK_MODE = 'online'
-PERIODOS   = ["day","week","month","year"]
-JSON_PATH  = os.path.join(os.path.dirname(__file__),'data','tags_data.json')
-OUT_XLSX   = os.path.join(os.path.dirname(__file__),'data','reportes_por_planta.xlsx')
+PERIODOS   = ["day", "week", "month", "year"]
+BASE_DIR   = os.path.dirname(__file__)
+DATA_DIR   = os.path.join(BASE_DIR, 'data')
+JSON_PATH  = os.path.join(DATA_DIR, 'tags_data.json')
+OUT_PATH   = os.path.join(DATA_DIR, 'reportes_por_planta.xlsx')
 
-def build_name_map(raw_period):
-    """
-    A partir de los registros diarios+horarios de un periodo,
-    construye un dict {TagUID: TagName}.
-    """
-    name_map = {}
-    for subkey in ('daily','hourly'):
-        for rec in raw_period[subkey]:
-            uid = rec.get('TagUID')
-            tn  = rec.get('TagName')
-            if uid and tn:
-                name_map[uid] = tn
-    return name_map
+def safe_pivot(df, index, columns, values):
+    """Pivot seguro: si falta `values` o df está vacío, retorna df[[index]] vacío."""
+    if df.empty or values not in df.columns:
+        return pd.DataFrame({index: []})
+    piv = df.pivot_table(index=index, columns=columns, values=values)
+    return piv.reset_index()
 
 def main():
-    # 1) extraer datos y volcar JSON
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    # 1) Extraer datos y volcar a JSON
     if WORK_MODE == 'online':
         resultados = {p: extraer_datos(p) for p in PERIODOS}
         guardar_json(resultados)
 
-    # 2) leer JSON
+    # 2) Leer JSON
     with open(JSON_PATH,'r',encoding='utf-8') as f:
         raw = json.load(f)
 
-    # 3) abrir writer
-    abrir_writer(OUT_XLSX)
+    # 3) Eliminar Excel previo
+    if os.path.exists(OUT_PATH):
+        os.remove(OUT_PATH)
 
-    # 4) procesar cada periodo
-    for p in PERIODOS:
-        rec = raw[p]
-        name_map = build_name_map(rec)
+    # 4) Un solo writer para todas las hojas
+    with pd.ExcelWriter(OUT_PATH, engine='xlsxwriter') as writer:
+        for p in PERIODOS:
+            # Reconstruir DataFrames desde JSON
+            df_d = pd.DataFrame(raw[p]['daily'])
+            df_h = pd.DataFrame(raw[p]['hourly'])
 
-        # convertir a DataFrames
-        df_d = pd.DataFrame(rec['daily'])
-        df_h = pd.DataFrame(rec['hourly'])
+            # Forzar datetime
+            if 'Timestamp' in df_d:
+                df_d['Timestamp'] = pd.to_datetime(df_d['Timestamp'])
+            if 'Timestamp' in df_h:
+                df_h['Timestamp'] = pd.to_datetime(df_h['Timestamp'])
+                
+            for df in (df_d, df_h):
+                if 'Plant' not in df.columns:
+                    df['Plant'] = ''
+                if 'Basin' not in df.columns:
+                    df['Basin'] = ''    
 
-        # DAILY
-        if not df_d.empty:
-            df_d['Timestamp'] = pd.to_datetime(df_d['Timestamp'])
-            piv = (
-                df_d
-                .pivot_table(index='Timestamp', columns='TagUID', values='Value', aggfunc='mean')
-                .rename(columns=name_map)
-                .reset_index()
-            )
-            add_sheet(piv, f"{p.capitalize()} Daily")
-        else:
-            print(f"⚠️ '{p.capitalize()} Daily' no tiene datos → salto")
+            # Pivot para Plants y Basins
+            piv_plants_d = safe_pivot(df_d, 'Timestamp', 'Plant', 'Value')
+            piv_basins_d = safe_pivot(df_d, 'Timestamp', 'Basin', 'Value')
+            piv_plants_h = safe_pivot(df_h, 'Timestamp', 'Plant', 'Value')
+            piv_basins_h = safe_pivot(df_h, 'Timestamp', 'Basin', 'Value')
 
-        # HOURLY
-        if not df_h.empty:
-            df_h['Timestamp'] = pd.to_datetime(df_h['Timestamp'])
-            piv = (
-                df_h
-                .pivot_table(index='Timestamp', columns='TagUID', values='Value', aggfunc='mean')
-                .rename(columns=name_map)
-                .reset_index()
-            )
-            add_sheet(piv, f"{p.capitalize()} Hourly")
-        else:
-            print(f"⚠️ '{p.capitalize()} Hourly' no tiene datos → salto")
+            # Generar hojas
+            generar_reporte_excel(piv_plants_d,  f"{p.capitalize()} Daily - Plants", writer)
+            generar_reporte_excel(piv_basins_d,  f"{p.capitalize()} Daily - Basins",  writer)
+            generar_reporte_excel(piv_plants_h, f"{p.capitalize()} Hourly - Plants", writer)
+            generar_reporte_excel(piv_basins_h, f"{p.capitalize()} Hourly - Basins",  writer)
 
-    # 5) cerrar writer
-    cerrar_writer()
-    print("✅ Reporte completo generado en", OUT_XLSX)
+    print("✅ Reporte guardado en", OUT_PATH)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
