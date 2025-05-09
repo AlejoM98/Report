@@ -1,8 +1,7 @@
 import os
 import json
 import pandas as pd
-
-from src.conexion import extraer_datos, guardar_json
+from src.conexion import extraer_datos, guardar_json, TAG_MAPPING
 from src.reportes_excel import generar_reporte_excel
 
 WORK_MODE = 'online'
@@ -16,50 +15,64 @@ def safe_pivot(df, index, columns, values):
     if df.empty or columns not in df.columns or values not in df.columns:
         return pd.DataFrame({index: []})
     piv = df.pivot_table(index=index, columns=columns, values=values)
-    if index in piv.index.names:
-        return piv.reset_index()
-    return piv
+    return piv.reset_index() if index in piv.index.names else piv
 
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    # 1) online → extraer + JSON
+    # 1) Extraer + JSON
     if WORK_MODE == 'online':
         resultados = {p: extraer_datos(p) for p in PERIODOS}
         guardar_json(resultados)
 
-    # 2) leer JSON
-    raw = json.load(open(JSON_PATH,'r',encoding='utf-8'))
+    # 2) Leer JSON
+    with open(JSON_PATH, 'r', encoding='utf-8') as f:
+        raw = json.load(f)
 
-    # 3) borrar Excel viejo
+    # 3) Borrar viejo Excel
     if os.path.exists(OUT_PATH):
         os.remove(OUT_PATH)
 
-    # 4) abrir un solo writer
+    # 4) Generar nuevo
     with pd.ExcelWriter(OUT_PATH, engine='xlsxwriter') as writer:
-        for p in PERIODOS:
-            df_d = pd.DataFrame(raw[p]['daily'])
-            df_h = pd.DataFrame(raw[p]['hourly'])
+        for periodo in PERIODOS:
+            df_d = pd.DataFrame(raw[periodo]['daily'])
+            df_h = pd.DataFrame(raw[periodo]['hourly'])
 
+            # Asegurar datetime
             for df in (df_d, df_h):
                 if 'Timestamp' in df:
                     df['Timestamp'] = pd.to_datetime(df['Timestamp'])
 
-            # pivote por Plant / Basin
-            piv_plants_d = safe_pivot(df_d, 'Timestamp','Plant','Value')
-            piv_basins_d = safe_pivot(df_d, 'Timestamp','Basin','Value')
-            piv_plants_h = safe_pivot(df_h, 'Timestamp','Plant','Value')
-            piv_basins_h = safe_pivot(df_h, 'Timestamp','Basin','Value')
+            # Para cada tipo de agrupación...
+            for kind, mapping in (("Plant", TAG_MAPPING['plants']),
+                                  ("Basin", TAG_MAPPING['basins'])):
+                # 1) Solo los nombres que realmente aparecen en daily
+                nombres = sorted(df_d[kind].dropna().unique()) if kind in df_d else []
 
-            # crear hojas
-            generar_reporte_excel(piv_plants_d,
-                f"{p.capitalize()} Daily - Plants", writer)
-            generar_reporte_excel(piv_basins_d,
-                f"{p.capitalize()} Daily - Basins", writer)
-            generar_reporte_excel(piv_plants_h,
-                f"{p.capitalize()} Hourly - Plants", writer)
-            generar_reporte_excel(piv_basins_h,
-                f"{p.capitalize()} Hourly - Basins", writer)
+                for name in nombres:
+                    # DAILY
+                    sub_d = df_d[df_d[kind] == name]
+                    piv_d = safe_pivot(sub_d, 'Timestamp', 'TagName', 'Value')
+                    generar_reporte_excel(
+                        piv_d,
+                        f"{periodo.capitalize()} Daily - {name}",
+                        writer,
+                        add_chart=True
+                    )
+
+                    # HOURLY (solo si existe la columna)
+                    if kind in df_h:
+                        sub_h = df_h[df_h[kind] == name]
+                    else:
+                        sub_h = pd.DataFrame(columns=df_h.columns)
+                    piv_h = safe_pivot(sub_h, 'Timestamp', 'TagName', 'Value')
+                    generar_reporte_excel(
+                        piv_h,
+                        f"{periodo.capitalize()} Hourly - {name}",
+                        writer,
+                        add_chart=True
+                    )
 
     print("✅ Reporte guardado en", OUT_PATH)
 

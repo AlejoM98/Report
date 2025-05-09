@@ -7,7 +7,7 @@ import pyodbc
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
-# Carga tu mapeo de prefijos → nombre de planta/cuenca
+# --- Carga el mapeo de plants/basins ---
 TAG_MAPPING = json.load(open(
     os.path.join(os.path.dirname(__file__), '..', 'config', 'tag_mapping.json'),
     encoding='utf-8'
@@ -71,7 +71,7 @@ def extraer_datos(period="day"):
     start, end = get_date_range(period)
     s0, e0     = start.isoformat(), end.isoformat()
 
-    # 1) TagUID → TagName desde la vista VTagBrowsing
+    # 1) Traer todos los TagUID→TagName de la vista
     q_tags = """
       SELECT DISTINCT
         TagUID,
@@ -81,18 +81,18 @@ def extraer_datos(period="day"):
     df_tags = pd.read_sql(q_tags, conn)
     name_map = dict(zip(df_tags.TagUID, df_tags.TagName))
 
-    # 2) Extraer valores RAW y luego agregados hourly si toca
+    # 2) Consultas RAW (daily) + agregación hourly
     if period=="day":
         q_raw = """
           SELECT 
-            CAST(SWITCHOFFSET(TimeStamp,'+00:00') AS datetime2(0)) AS Date,
-            TagUID,
-            CASE WHEN Agg_NUM=0 THEN NULL
-                 ELSE Agg_SUM/CAST(Agg_NUM AS float) END AS Value
-          FROM TLG.VAggregateValue
-          WHERE TimeStamp >= ? AND TimeStamp < ?;
+            CAST(SWITCHOFFSET(AV.TimeStamp,'+00:00') AS datetime2(0)) AS Date,
+            AV.TagUID,
+            CASE WHEN AV.Agg_NUM=0 THEN NULL
+                 ELSE AV.Agg_SUM/CAST(AV.Agg_NUM AS float) END AS Value
+          FROM TLG.VAggregateValue AV
+          WHERE AV.TimeStamp >= ? AND AV.TimeStamp < ?;
         """
-        df       = pd.read_sql(q_raw, conn, params=[s0, e0])
+        df = pd.read_sql(q_raw, conn, params=[s0, e0])
 
         q_hour = """
           SELECT 
@@ -105,9 +105,8 @@ def extraer_datos(period="day"):
           GROUP BY DATEADD(hour, DATEDIFF(hour,0,SWITCHOFFSET(TimeStamp,'+00:00')),0), TagUID;
         """
         df_hourly = pd.read_sql(q_hour, conn, params=[s0, e0])
-
     else:
-        q_raw = """
+        q_agg = """
           SELECT 
             CAST(SWITCHOFFSET(TimeStamp,'+00:00') AS date) AS Date,
             TagUID,
@@ -117,30 +116,33 @@ def extraer_datos(period="day"):
           WHERE TimeStamp >= ? AND TimeStamp < ?
           GROUP BY CAST(SWITCHOFFSET(TimeStamp,'+00:00') AS date), TagUID;
         """
-        df        = pd.read_sql(q_raw, conn, params=[s0, e0])
+        df        = pd.read_sql(q_agg, conn, params=[s0, e0])
         df_hourly = pd.DataFrame(columns=['Date','TagUID','Value'])
 
     conn.close()
 
-    # 3) Asegurar datetime
+    # Asegurar datetime
     if not df.empty:
         df['Date'] = pd.to_datetime(df['Date'])
     if not df_hourly.empty:
         df_hourly['Date'] = pd.to_datetime(df_hourly['Date'])
 
-    # 4) Enriquecer con TagName + inferencia Plant/Basin
+    # 3) Enriquecer con TagName, Plant y Basin
     for d in (df, df_hourly):
-        if d.empty:
+        if d.empty: 
             continue
 
-        d['TagName']  = d['TagUID'].map(name_map).fillna('Sin Nombre')
+        # 3.1 TagName
+        d['TagName'] = d['TagUID'].map(name_map).fillna('Sin Nombre')
+        # 3.2 Timestamp ISO
         d['Timestamp'] = d['Date'].dt.strftime('%Y-%m-%dT%H:%M:%S')
+        # 3.3 Inferir Plant/Basin por prefijo antes de "_"
+        parts = d['TagName'].str.split('_', n=1, expand=True)
+        code = parts[0]   # ej. "EA", "TUN", ...
+        rest = parts[1]   # el resto tras "_"
 
-        # split por "_" y añadir "_" para casar con tus prefijos
-        parts = d['TagName'].str.split(pat='_', n=1, expand=True)
-        codes = parts[0] + '_'
-        d['Plant'] = codes.map(TAG_MAPPING['plants']).fillna('')
-        d['Basin'] = codes.map(TAG_MAPPING['basins']).fillna('')
+        d['Plant'] = code.map(lambda c: TAG_MAPPING['plants'].get(c, '')).fillna('')
+        d['Basin'] = rest.map(lambda c: TAG_MAPPING['basins'].get(c, '')).fillna('')
 
         d.drop(columns=['Date'], inplace=True)
 

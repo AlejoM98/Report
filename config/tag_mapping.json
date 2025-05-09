@@ -1,19 +1,19 @@
 {
   "plants": {
-    "EA_": "El Alto",
-    "ACH_": "Achachicala",
-    "PAM_": "Pampahasi",
-    "CHU_": "Chuquiaguillo",
-    "TIL_": "Tilata",
-    "LO_": "Linea Oeste",
-    "SF_": "San Felipe"
+    "EA": "El Alto",
+    "ACH": "Achachicala",
+    "PAM": "Pampahasi",
+    "CHU": "Chuquiaguillo",
+    "TIL": "Tilata",
+    "LO": "Linea Oeste",
+    "SF": "San Felipe"
   },
   "basins": {
-    "MIL_": "Milluni",
-    "TUN_": "Tuni",
-    "HAM_": "Hampaturi",
-    "PAL_": "Palcoma",
-    "CHO_": "Kaluyo",
-    "INC_": "Incachaca"
+    "MIL": "Milluni",
+    "TUN": "Tuni",
+    "HAM": "Hampaturi",
+    "PAL": "Palcoma",
+    "CHO": "Kaluyo",
+    "INC": "Incachaca"
   }
 }

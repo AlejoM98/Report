@@ -1,53 +1,73 @@
-import os
 import pandas as pd
 from xlsxwriter.utility import xl_col_to_name
 
-def generar_reporte_excel(df: pd.DataFrame, sheet_name: str, writer):
+def generar_reporte_excel(df: pd.DataFrame,
+                          sheet_name: str,
+                          writer,
+                          add_chart: bool = False):
+    """
+    Inserta en `writer` una hoja con el DataFrame `df` + opcional gráfico.
+    """
     if df.empty:
-        print(f"⚠️ '{sheet_name}' vacío, salto")
+        print(f"⚠️ '{sheet_name}' no tiene datos, salto")
         return
 
-    book = writer.book
-    safe  = sheet_name[:31]
-    ws   = book.add_worksheet(safe)
+    df = df.reset_index(drop=True)
+    ncols = len(df.columns)
+    safe = sheet_name[:31]
+    ws = writer.book.add_worksheet(safe)
     writer.sheets[safe] = ws
 
-    header_fmt = book.add_format({'align':'center','bold':True,'bg_color':'#D9D9D9','border':1})
-    date_fmt   = book.add_format({'num_format':'yyyy-mm-dd','align':'center'})
-    num_fmt    = book.add_format({'num_format':'0.00'})
-    red_fmt    = book.add_format({'font_color':'#9C0006','bg_color':'#FFC7CE'})
-    alt_fmt    = book.add_format({'bg_color':'#F2F2F2'})
+    book       = writer.book
+    header_fmt = book.add_format({
+        'align':'center','bold':True,
+        'bg_color':'#D9D9D9','border':1
+    })
+    date_fmt = book.add_format({
+        'num_format':'yyyy-mm-dd hh:mm','align':'center'
+    })
+    num_fmt = book.add_format({'num_format':'0.00'})
+    alt_fmt = book.add_format({'bg_color':'#F2F2F2'})
 
-    # título
-    last = xl_col_to_name(len(df.columns)-1)
-    ws.merge_range(f'A1:{last}1', sheet_name, header_fmt)
+    # --- Título / header ---
+    if ncols > 1:
+        last = xl_col_to_name(ncols-1)
+        ws.merge_range(f'A1:{last}1', sheet_name, header_fmt)
+    else:
+        ws.write(0, 0, sheet_name, header_fmt)
 
-    # volcar datos
+    # --- Escribo la tabla a partir de fila 2 ---
     df.to_excel(writer, sheet_name=safe, startrow=2, index=False)
 
-    # dar formato a columnas
-    for i, col in enumerate(df.columns):
-        width = max(df[col].astype(str).map(len).max(), len(col)) + 2
-        ws.set_column(i, i, width, date_fmt if i==0 else num_fmt)
+    # --- Ajuste de columnas ---
+    for idx, col in enumerate(df.columns):
+        max_len = max(df[col].astype(str).map(len).max(),
+                      len(str(col)))
+        width = max_len + 2
+        fmt = date_fmt if idx == 0 else num_fmt
+        ws.set_column(idx, idx, width, fmt)
 
-    # bandas alternas
-    rows = len(df)
-    ws.conditional_format(f'A3:{last}{3+rows}', {
-        'type':'no_errors','format':alt_fmt,'criteria':'!=','value':''
+    # --- Bandas alternas ---
+    last_row = 2 + len(df)
+    last_col = xl_col_to_name(ncols-1)
+    ws.conditional_format(f'A3:{last_col}{last_row}', {
+        'type':'no_errors','criteria':'!=','value':'','format':alt_fmt
     })
 
-    # resaltado condicional >100
-    for c in range(1, len(df.columns)):
-        ws.conditional_format(3, c, 3+rows, c, {
-            'type':'cell','criteria':'>','value':100,'format':red_fmt
+    # --- Gráfico de tendencia (primer TagName) ---
+    if add_chart and ncols > 2:
+        chart = book.add_chart({'type':'line'})
+        # series: usamos la primera columna de datos (col idx 1)
+        chart.add_series({
+            'name':       df.columns[1],
+            'categories': [safe, 2, 0, last_row-1, 0],
+            'values':     [safe, 2, 1, last_row-1, 1],
         })
+        chart.set_title({'name': 'Tendencia de ' + df.columns[1]})
+        chart.set_x_axis({'name': 'Timestamp'})
+        chart.set_y_axis({'name': 'Value'})
+        # Inserto debajo de la tabla
+        ws.insert_chart(f'A{last_row+3}', chart,
+                        {'x_offset': 0, 'y_offset': 10})
 
-    # gráfico simple
-    if rows>0:
-        ch = book.add_chart({'type':'line'})
-        ch.add_series({
-            'categories':[safe,2,0,2+rows-1,0],
-            'values':    [safe,2,1,2+rows-1,1],
-            'name':      sheet_name
-        })
-        ws.insert_chart(f'B{4+rows}', ch, {'x_scale':1.2,'y_scale':1.2})
+    print(f"✅ Hoja '{sheet_name}' creada")
